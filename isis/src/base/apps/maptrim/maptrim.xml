@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<application name="maptrim" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://isis.astrogeology.usgs.gov/Schemas/Application/application.xsd">
+
+  <brief>
+    Trim edges of a map projected image
+  </brief>
+
+  <description>
+    Trims the edges of a map projected image (<def>Level2</def>) to the exact
+    <def>latitude</def> and <def>longitude</def> boundaries specified in the
+    user parameters, or by default, the lat/lon range found in the Mapping group
+    in the <def>cube</def> labels. Any pixels outside this lat/lon range will be
+    set to the <def>NULL</def> value by default, unless a different mode is
+    specified by the user. The latitudes and longitudes are the same
+    <def link="Latitude Type">type</def>,
+    <def link="Longitude Domain">domain</def>, and
+    <def link="Longitude Direction">direction</def> as
+    those found in the Mapping group in the cube labels. For example, if the
+    input cube's Mapping group has a longitude direction of
+    <def link="Positive East Longitude">positive east</def> and
+    the user specifies the lat/lon range, those longitudes will be interpreted
+    as positive east longitudes.
+    <br/><br/>
+    Note: This application will not handle non-projected images (i.e. images
+    that are not Level2). To trim a <def>Level1</def> image, please refer to
+    <em>camtrim</em>.
+  </description>
+
+  <category>
+    <categoryItem>Map Projection</categoryItem>
+    <categoryItem>Trim and Mask</categoryItem>
+  </category>
+
+  <history>
+    <change name="Tracie Sucharski" date="2003-02-28">
+      Original version
+    </change>
+    <change name="Tracie Sucharski" date="2003-04-03">
+      Changed brief description, added error check for no values
+      entered for slat,elat,slon,elon.
+    </change>
+    <change name="Stuart Sides" date="2003-05-16">
+      Modified schema location from astogeology... to isis.astrogeology..."
+    </change>
+    <change name="Stuart Sides" date="2003-07-29">
+      Modified filename parameters to be cube parameters where necessary
+    </change>
+    <change name="Brendan George" date="2005-11-21">
+      Added application test
+    </change>
+    <change name="Sean Crosby" date="2007-03-16">
+      Added cropping and crop+trim ability; modified apptest
+    </change>
+    <change name="Christopher Austin" date="2009-01-27">
+      Fixed parameter names
+    </change>
+    <change name="Travis Addair" date="2009-08-10">
+      Mapping group parameters are now placed into the print file.
+    </change>
+    <change name="Mackenzie Boyd" date="2009-08-12">
+      Modified call to crop to handle from and to parameters with spaces in 
+      directories.
+    </change>
+    <change name="Jai Rideout" date="2011-01-11">
+      Updated documentation and testing with Ella Lee in preparation for the
+      3.4.0 release. Fixed various inconsistencies in the documentation and
+      rewrote some parts to make it clearer. Added an example. Added two new
+      tests to test getting the lat/lon range from the cube labels and the
+      processing of level 1 images.
+    </change>
+    <change name="Kimberly Oyama" date="2013-1-14">
+      Changed the temporary file name to be unique between executions so there
+      are no conflicts when multiple instances of the program are running. Added
+      an app test to exercise this change. Fixes #1216.
+    </change>      
+  </history>
+
+  <oldName>
+    <item>trimsinu</item>
+  </oldName>
+
+  <groups>
+    <group name="Files">
+      <parameter name="FROM">
+        <type>cube</type>
+        <fileMode>input</fileMode>
+        <brief>
+          Input cube to trim
+        </brief>
+        <description>
+          Use this parameter to select the filename.  All bands within the file
+	  will be trimmed.
+        </description>
+        <filter>
+          *.cub
+        </filter>
+      </parameter>
+      <parameter name="TO">
+        <type>cube</type>
+        <fileMode>output</fileMode>
+        <brief>
+          Output cube
+        </brief>
+        <description>
+          This file will contain the results of the trimmed cube.
+        </description>
+        <filter>
+          *.cub
+        </filter>
+      </parameter>
+    </group>
+
+    <group name="Trim options">
+      <parameter name="MODE">
+        <type>string</type>
+        <default><item>TRIM</item></default> 
+        <brief>Maptrim options</brief>
+        <description>
+          This allows the user to decide which trimming options to use.
+          Normally, all pixels outside the lat/lon ranges are set to NULL. There
+          is now a choice to crop out a part of a map with or without nulled
+          pixels outside the lat/lon range.
+        </description>
+        <list>
+          <option value="TRIM">
+            <brief>Null all pixels outside lat/lon range</brief>
+            <description>
+              The original dimensions of the map are preserved while all pixels
+              outside the lat/lon range are nulled.
+            </description>
+          </option>
+
+          <option value="CROP">
+            <brief>Crop the area defined by the lat/lon range</brief>
+            <description>
+              The dimensions of the output file will be just large enough to
+              fit the cropped area. No pixels are nulled here.
+            </description>
+          </option>
+
+          <option value="BOTH">
+            <brief>Crop map and null all pixels outside lat/lon range</brief>
+            <description>
+              The dimensions of the output file will be just large enough to
+              fit the cropped area and all pixels outside the lat/lon range
+              are nulled.
+            </description>
+          </option>
+        </list>
+      </parameter>
+    </group>  
+
+    <group name="Trim Parameters">
+      <parameter name="MINLAT">
+        <type>double</type>
+        <internalDefault>
+          Minimum latitude in labels
+        </internalDefault>
+        <brief>Starting latitude</brief>
+        <description>
+          Starting latitude of range to exclude from trim. Any pixels whose
+          latitude is less than this value will be set to NULL.
+        </description>
+        <minimum inclusive="yes">-90</minimum>
+        <maximum inclusive="yes">90</maximum>
+        <lessThan>
+          <item>MAXLAT</item>
+        </lessThan>
+      </parameter>
+
+      <parameter name="MAXLAT">
+        <type>double</type>
+        <internalDefault>
+          Maximum latitude in labels
+        </internalDefault>
+        <brief>Ending latitude</brief>
+        <description>
+          Ending latitude of range to exclude from trim. Any pixel whose
+          latitude is greater than this value will be set to NULL.
+        </description>
+        <minimum inclusive="yes">-90</minimum>
+        <maximum inclusive="yes">90</maximum>
+        <greaterThan>
+          <item>MINLAT</item>
+        </greaterThan>
+      </parameter>
+
+      <parameter name="MINLON">
+        <type>double</type>
+        <internalDefault>
+          Minimum longitude in labels
+        </internalDefault>
+        <brief>Starting longitude</brief>
+        <description>
+          Starting longitude of range to exclude from trim. Any pixel whose
+          longitude is less than this value will be set to NULL.
+        </description>
+        <minimum inclusive="yes">-360</minimum>
+        <maximum inclusive="yes">360</maximum>
+        <lessThan>
+          <item>MAXLON</item>
+        </lessThan>
+      </parameter>
+      
+      <parameter name="MAXLON">
+        <type>double</type>
+        <internalDefault>
+          Maximum longitude in labels
+        </internalDefault>
+        <brief>Ending longitude</brief>
+        <description>
+          Ending longitude of range to exclude from trim. Any pixels whose
+          longitude is greater than this value will be set to NULL.
+        </description>
+        <minimum inclusive="yes">-360</minimum>
+        <maximum inclusive="yes">360</maximum>
+        <greaterThan>
+          <item>MINLON</item>
+        </greaterThan>
+      </parameter>
+    </group>
+  </groups>
+
+  <examples>
+    <example>
+      <brief>Trimming a Projected Image</brief>
+      <description>
+        This example illustrates how to trim a cube that has been projected with
+        a sinusoidal projection. All pixels with latitudes less than 15
+        or greater than 20 are set to NULL, and all pixels with longitudes less
+        than 222 or greater than 230 are also set to NULL.
+      </description>
+      <terminalInterface>
+        <commandLine>
+          FROM=input.cub TO=trimmed.cub MINLAT=15 MAXLAT=20 MINLON=222
+          MAXLON=230
+        </commandLine>
+        <description>
+          The command to use for this example.
+        </description>
+      </terminalInterface>
+      <inputImages>
+        <image src="assets/image/input.png" width="371" height="550">
+          <brief>Input cube</brief>
+          <description>This is the input cube to trim.</description>
+          <parameterName>FROM</parameterName>
+          <thumbnail caption="input.cub" src="assets/thumb/input_thumb.png"
+            width="100" height="148"/>
+        </image>
+      </inputImages>
+      <outputImages>
+        <image src="assets/image/trimmed.png" width="371" height="550">
+          <brief>Trimmed cube</brief>
+          <description>This is the trimmed cube. Notice that all pixels that
+            fell outside the user-specified range were set to NULL.
+          </description>
+          <parameterName>TO</parameterName>
+          <thumbnail caption="trimmed.cub" src="assets/thumb/trimmed_thumb.png"
+            width="100" height="148"/>
+        </image>
+      </outputImages>
+    </example>
+  </examples>
+</application>
+

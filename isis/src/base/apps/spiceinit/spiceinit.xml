@@ -1,0 +1,844 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<application name="spiceinit" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://isis.astrogeology.usgs.gov/Schemas/Application/application.xsd">
+  <brief>
+    Determine SPICE kernels for a camera cube
+  </brief>
+
+  <description>
+    <p>
+      Cubes which have supported camera models in the ISIS system require spacecraft position, pointing, body shape and orientation, sun position, and other
+      information in order to compute ground positions (latitude/longitude) and photometric viewing angles.   This information is stored in SPICE kernels.
+      This program attempts to search the ISIS data areas in order to discern the SPICE kernels required for the camera cube.
+    </p>
+
+    <p>
+      The program examines the "SpacecraftName", "InstrumentId", "TargetName", "StartTime", and "StopTime" keywords in the cube label to determine the kernels to use.   It
+      attempts to find kernels files for the following keywords and writes them to the Kernels group:
+    </p>
+
+    <ul>
+      <li>Leap Second (LS)</li>
+      <li>Spacecraft Clock (SCLK)</li>
+      <li>Target Position (TSPK)</li>
+      <li>Target AttitudeShape (PCK)</li>
+      <li>Instrument (IK)</li>
+      <li>Instrument Addendum (IAK)</li>
+      <li>Frame (FK)</li>
+      <li>Spacecraft Position (SPK) </li>
+      <li>Instrument Pointing (CK)</li>
+      <li>Shape Model (DEM)</li>
+    </ul>
+
+    If you are unfamilar with SPICE terminology it is recommended you read the NAIF required reading at http://naif.jpl.nasa.gov/naif/doc_C.html
+
+    <p>
+      The program modifies the kernels group and writes the name of the SPICE files that need to be loaded by the camera models.  It has the option of pre-reading the
+      data from the SPICE kernels and loading it as a binary table attached to the cube.  This can faciliate faster load times and allows the instrument pointing to be easily updated.
+    </p>
+    <p>
+      As kernels are loaded they override the data in previously loaded kernels.
+      The order in which kernels are loaded is:
+      <ol>
+        <li>Target Position</li>
+        <li>Instrument Position</li>
+        <li>Instrument Pointing</li>
+        <li>Frame</li>
+        <li>Target Attitude Shape</li>
+        <li>Instrument</li>
+        <li>Instrument Addendum</li>
+        <li>Leap Second</li>
+        <li>Spacecraft Clock</li>
+        <li>Extra</li>
+      </ol>
+
+      spiceinit will always try to use the best quality kernels possible. This
+      only applies to kernels that are not specified manually. The
+      kernel qualities are, in order:
+      <ol>
+        <li>Smithed</li>
+        This is the best quality of kernel and will used first because these
+        kernels are created after the fact based on the image data. There are
+        not usually standard products with this quality.
+        <li>Reconstructed</li>
+        These kernels are typically produced by a mission a few weeks after the
+        fact.
+        <li>Predicted</li>
+        These kernels are produced by a mission before the fact and are
+        best-estimates of where the spacecraft will be.
+        <li>Nadir</li>
+        This is the worst quality and will be used as a last resort. This
+        assumes the spacecraft is always nadir-looking.
+      </ol>
+    </p>
+    <p>
+       Please note: Kernel Files specified that reside in the current working directory will not have their paths expanded.  This is to allow variables like $msg/ to work correctly.
+    </p>
+    <p><b>Troubleshooting:</b> If spiceinit is failing with the error
+      "No Camera Kernel found for the image ..." then try enabling the
+      "CKPREDICTED" or "CKNADIR" option. A similar error exists for SPK kernels,
+      and you can enable "SPKPREDICED" to get past that error. "PREDICTED" and
+      "NADIR" options typically have less accuracy than reconstructed/smithed
+      kernels which is why they are disabled by default.
+    </p>
+  </description>
+
+  <category>
+    <categoryItem>Cameras</categoryItem>
+  </category>
+
+  <history>
+    <change name="Debbie A. Cook" date="2000-06-08">
+      Original Version
+    </change>
+    <change name="Stuart Sides" date="2003-11-05">
+      Complete rewrite under Isis 3.0 conversion.
+    </change>
+    <change name="Stuart Sides" date="2004-01-14">
+      Modified to use an existing "Kernels" group instead of creating a
+      new one. This was because the mission specific import program
+      (e.g., moc2isis) was modified to create the "kernels" group and
+      put the "NaifFrameCode" into it.
+    </change>
+    <change name="Stuart Sides" date="2004-01-23">
+      Added new parameter "TEST". This parameter controls the
+      testing of the final kernel list. If false the kernels will not be
+      tested for completness by createing a camera model.
+    </change>
+    <change name="Stuart Sides" date="2004-02-23">
+      Added elevation model DEM capabilities.
+    </change>
+    <change name="Stuart Sides" date="2004-02-24">
+      Completed capabilities to search for kernels of different qualities
+      such as PREDICTED, NADIR, RECONSTRUCTED, and C-SMITHED.
+    </change>
+    <change name="Stuart Sides" date="2005-11-08">
+      Added fix for framing cameras, so they would not need a stop time in
+      the instrument group of the labels.
+    </change>
+    <change name="Elizabeth Miller" date="2005-11-14">
+      Added appTest
+    </change>
+    <change name="Jacob Danton" date="2005-12-22">
+      Added support for multiple files within the kernels
+    </change>
+    <change name="Jacob Danton" date="2005-12-27">
+      Added a progress bar
+    </change>
+    <change name="Jacob Danton" date="2006-01-03">
+      Fixed the xml description
+    </change>
+    <change name="Jacob Danton" date="2006-01-25">
+      Changed the mission translation file name
+    </change>
+    <change name="Jacob Danton" date="2006-01-25">
+      Changed the appTest to comply with changes in the String class.
+    </change>
+    <change name="Jeff Anderson" date="2006-03-27">
+      Modified to write InstrumentPointing, InstrumentPosition, SunPosition, and BodyRotation information to
+      SPICE tables in the cube.
+    </change>
+    <change name="Brendan George" date="2006-09-19">
+        Added call to  modify the history of the cube
+    </change>
+    <change name="Brendan George" date="2006-10-19">
+        Modifed to remove label entries for spice tables, if ATTACH is unchecked,
+        and the input cube already has them.
+    </change>
+    <change name="Steven Lambright" date="2007-07-10">
+       Combined Frame and InstrumentPointing. Changed to support new version of KernelDb. Cleaned up the code.
+    </change>
+    <change name="Steven Lambright and Steve Koechle" date="2007-07-10">
+       Fixed problem where the allowed kernels were being set improperly.
+    </change>
+    <change name="Steven Lambright" date="2007-08-10">
+       Fixed so that when no spacecraft pointing is found, but frame kernels are, and Nadir is allowed it still adds the Nadir keyword. 
+    </change>
+    <change name="Steven Koechle" date="2007-10-05">
+       Added a check to see if the cube had an existing polygon, if so delete it.
+    </change>
+    <change name="Steven Koechle" date="2007-10-25">
+       Fixed Smithed enum, changed from C-Smithed.
+    </change> 
+    <change name="Steven Koechle" date="2007-12-14">
+        Added error handling logic. If the user chose to use Nadir CK and 
+        another type, and the system found a file where the image falls in a gap 
+        (no pointing is available) Nadir would never be calculated. Fixed.
+    </change>
+    <change name="Steven Lambright" date="2008-02-13">
+       Added time padding options
+    </change>
+    <change name="Steven Lambright" date="2008-02-21">
+       Added additional explanation of time padding options
+    </change>
+    <change name="Steven Lambright" date="2008-02-22">
+       Split the CK parameter into FK and CK, they are still combined in the label as
+       InstrumentPointing.
+    </change>
+    <change name="Steven Lambright" date="2008-04-14">
+       All found CK kernels will now be tested before giving an error
+    </change>
+    <change name="Christopher Austin" date="2008-05-02">
+        Fixed the propagation of the EXTRA Kernel.
+    </change>
+    <change name="Steven Lambright" date="2008-05-12">
+      Removed references to CubeInfo 
+    </change>
+    <change name="Steven Lambright" date="2008-05-19">
+      Fixed documentation
+    </change>
+    <change name="Christopher Austin" date="2008-06-03">
+      Furthered documentation.
+    </change>
+    <change name="Steven Koechle" date="2008-06-17">
+      Added CK check and throw more appropriate error
+    </change>
+    <change name="Christopher Austin" date="2008-09-12">
+      Added the removal of StartPadding and EndPadding keywords from previous
+      spiceinit runs, and added some double inited tests.  NOTE: Whenever
+      adding new keywords, run spiceinit twice on the same cube in your test,
+      dumping out both labels to verify that the keyword is not being
+      duplicated.
+    </change>
+    <change name="Tracie Sucharski" date="2009-03-12">
+      If spice is put into a Table, append the kernel name to the Kernel group
+      keyword to keep track of original spice kernels.
+    </change>
+    <change name="Steven Koechle" date="2009-05-12">
+      Added CameraVersion into the Kernel labels
+    </change>
+    <change name="Steven Lambright" date="2009-07-09">
+      Error messages from the camera are now reported
+    </change>
+    <change name="Steven Lambright" date="2009-07-21">
+      Fixed handling of user-entered CK kernels
+    </change>
+    <change name="Janet Barrett and Steven Lambright" date="2011-05-25">
+      Added support for storing text spice kernel values in the cube labels
+    </change>
+    <change name="Steven Lambright and Jai Rideout" date="2011-08-30">
+      Added support for using a spiceinit web service
+    </change>
+    <change name="Steven Lambright" date="2011-10-05">
+      As a result of our test and review team, I have updated the documentation
+      to match the recommendations of Laz Kestay and Ken Edmundson. Fixes
+      #423.
+    </change>
+    <change name="Jai Rideout" date="2011-11-18">
+      Fixed bug in writing tables to the cube that were retrieved from the web
+      service.
+    </change>
+    <change name="Debbie A. Cook" date="2012-07-06">
+       Updated Spice members to be more compliant with Isis coding standards. 
+       References #972.
+    </change>
+    <change name="Jeannie Backer" date="2013-02-26">
+      Added ability to load multiple ck database files from the system using a 
+      conf file. Changed methods to lower camel case to comply with Isis3 
+      standards. Added web example. References #924.
+    </change>
+  </history>
+
+  <oldName>
+    <item>levinit</item>
+    <item>naiflab</item>
+    <item>spicelab</item>
+  </oldName>
+
+  <groups>
+    <group name="Input Files">
+      <parameter name="FROM">
+        <type>cube</type>
+        <fileMode>input</fileMode>
+        <brief>
+          The filename of the input cube to have "kernel" labels added to it
+        </brief>
+        <description>
+          The input file which will have a new "kernel" group added to its labels.
+        </description>
+        <filter>*.cub</filter>
+      </parameter>
+    </group>
+
+    <group name="Spice Data">
+      <parameter name="WEB">
+        <type>boolean</type>
+        <default><item>false</item></default>
+        <brief>
+          Use the ISIS Spice Web Service
+        </brief>
+        <description>
+          This option enables using the ISIS Spice Website to get the most up to
+          date kernels available. ATTACH must be enabled for this, and manually
+          specifying files with this option on is not allowed. This service may
+          be temporarily unavailable when new Isis releases are being
+          distributed. Any mismatch in Isis version between the latest version
+          and the version you are running will cause this option to fail; only
+          the most recent version of Isis is supported. An active internet
+          connection is required to use this service and downloading SPICE data
+          will be slower than if you had run this with local files (downloaded
+          all of $ISIS3DATA). The size of the download will depend heavily on
+          the mission and instrument of your input file.
+        </description>
+        <exclusions>
+          <item>ATTACH</item>
+          <item>LS</item>
+          <item>PCK</item>
+          <item>TSPK</item>
+          <item>IK</item>
+          <item>SCLK</item>
+          <item>CK</item>
+          <item>FK</item>
+          <item>SPK</item>
+          <item>IAK</item>
+          <item>EXTRA</item>
+        </exclusions>
+        <inclusions>
+          <item>URL</item>
+          <item>PORT</item>
+        </inclusions>
+      </parameter>
+
+      <parameter name="ATTACH">
+        <type>boolean</type>
+        <default><item>TRUE</item></default>
+        <brief>
+          Attach SPICE data to cube
+        </brief>
+        <description>
+          This option attaches binary tables to the cube which contain the
+          instrument position (SPK) and orientation (CK), as well as the sun
+          position and body/target orientation. This is the prefered
+          initialization option as it allows the pointing to be updated by
+          further programs.
+        </description>
+      </parameter>
+    </group>
+
+    <group name="Instrument Orientation Kernel (CK) quality">
+      <parameter name="CKSMITHED">
+        <type>boolean</type>
+        <default><item>FALSE</item></default>
+        <brief>
+          Use smithed pointing kernels if available
+        </brief>
+        <description>
+          Allow the use of pointing kernels marked as c-smithed.
+          If this parameters is turned on, c-smithed kernels may be used to
+          cover the time requirements of the image. At least one of the
+          parameters "CKPREDICTED", "CKNADIR", "CKRECON", "CKSMITHED"
+          must be entered.
+        </description>
+      </parameter>
+
+      <parameter name="CKRECON">
+        <type>boolean</type>
+        <default><item>TRUE</item></default>
+        <brief>
+          Use reconstructed pointing kernels if available
+        </brief>
+        <description>
+          Allow the use of pointing kernels marked as reconstructed.
+          If this parameters is turned on, reconstructed kernels may be used to
+          cover the time requirements of the image. At least one of the
+          parameters "CKPREDICTED", "CKNADIR", "CKRECON", "CKSMITHED"
+          must be entered.
+        </description>
+      </parameter>
+
+      <parameter name="CKPREDICTED">
+        <type>boolean</type>
+        <default><item>FALSE</item></default>
+        <brief>
+          Use predicted pointing kernels if available
+        </brief>
+        <description>
+          Allow the use of pointing kernels marked as predicted.
+          If this parameters is turned on, predicted kernels may be used to
+          cover the time requirements of the image. At least one of the
+          parameters "CKPREDICTED", "CKNADIR", "CKRECON", "CKSMITHED"
+          must be entered.
+        </description>
+      </parameter>
+
+      <parameter name="CKNADIR">
+        <type>boolean</type>
+        <default><item>FALSE</item></default>
+        <brief>
+          Compute nadir pointing if no other kernels exist
+        </brief>
+        <description>
+          This option will create nadir pointing data if the other ck kernel
+          types do not exist or do not cover the time range of the input cube.
+          At least one of the parameters "CKPREDICTED", "CKNADIR", "CKRECON",
+          "CKSMITHED" must be entered.
+        </description>
+      </parameter>
+    </group>
+
+    <group name="Instrument Position Kernel (SPK) quality">
+      <parameter name="SPKSMITHED">
+        <type>boolean</type>
+        <default><item>FALSE</item></default>
+        <brief>
+          Use smithed position kernels if available
+        </brief>
+        <description>
+          Allow the use of position kernels marked as smithed.
+          If this parameters is turned on, smithed kernels may be used to(
+          cover the time requirements of the image. At least one of the
+          parameters "SPKPREDICTED",  "SPKRECON", "SPKSMITHED"
+          must be entered.
+        </description>
+      </parameter>
+
+      <parameter name="SPKRECON">
+        <type>boolean</type>
+        <default><item>TRUE</item></default>
+        <brief>
+          Use reconstructed position kernels if available
+        </brief>
+        <description>
+          Allow the use of position kernels marked as reconstructed.
+          If this parameters is turned on, reconstructed kernels may be used to
+          cover the time requirements of the image. At least one of the
+          parameters "SPKPREDICTED",  "SPKRECON", "SPKSMITHED"
+          must be entered.
+        </description>
+      </parameter>
+
+      <parameter name="SPKPREDICTED">
+        <type>boolean</type>
+        <default><item>FALSE</item></default>
+        <brief>
+          Use predicted pointing kernels if available
+        </brief>
+        <description>
+          Allow the use of position kernels marked as predicted.
+          If this parameters is turned on, predicted kernels may be used to
+          cover the time requirements of the image. At least one of the
+          parameters "SPKPREDICTED",  "SPKRECON", "SPKSMITHED"
+          must be entered.
+        </description>
+      </parameter>
+
+    </group>
+
+    <!--
+    <group name="Kernel Database">
+      <parameter name="DEFAULT">
+        <type>boolean</type>
+        <default><item>TRUE</item></default>
+        <brief>
+          Search the ISIS default database files for appropriate kernels
+        </brief>
+        <description>
+          Allows the program to search kernel databases in the ISIS
+          preference "BASE" and the mission specific ISIS preference
+          (e.g., "MGS") for kernels file to satisfy the kernel label
+          requirements.
+        </description>
+      </parameter>
+
+      <parameter name="DATABASE">
+        <type>filename</type>
+        <fileMode>input</fileMode>
+        <internalDefault>none</internalDefault>
+        <brief>
+          User defined kernel database file.
+        </brief>
+        <description>
+          Kernel database to be used to find kernels for the
+          input file. All kernels found in the user database will override any
+          found in the default database.
+        </description>
+        <filter>
+          *.db
+        </filter>
+      </parameter>
+    </group>
+    -->
+
+    <group name="User Override of System Kernels">
+      <parameter name="LS">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined leap second kernel file.
+        </brief>
+        <description>
+          Naif kernel file to be used for the leap second in place of the
+          automated leap second kernel. The LS kernel will be referenced in the
+          keyword LeapSecond by the resulting Kernel group. If none is 
+          specified, spiceinit will use the latest kernel config file or kernel
+          database file to find the appropriate kernel(s) for the given input 
+          file.
+        </description>
+        <defaultPath>
+          $base/kernels/lsk/
+        </defaultPath>
+        <filter>*.tls</filter>
+      </parameter>
+
+      <parameter name="PCK">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined target attitude and shape kernel file.
+        </brief>
+        <description>
+          Naif kernel file to be used for the target attitude and shape in place
+          of the automated attitude and shape kernel. The PCK kernel will be
+          referenced in the keyword TargetAttitudeShape by the resulting Kernel
+          group.  If none is specified, spiceinit will use the latest kernel 
+          config file or kernel database file to find the appropriate kernel(s) 
+          for the given input file.
+        </description>
+        <defaultPath>
+          $base/kernels/pck/
+        </defaultPath>
+        <filter>*.tpc</filter>
+      </parameter>
+
+      <parameter name="TSPK">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined target position kernel file.
+        </brief>
+        <description>
+          Naif kernel file to be used for the target position in place of the
+          automated position kernel. The TSPK kernel will be referenced in the
+          keyword TargetPosition by the resulting Kernel group.  If none is 
+          specified, spiceinit will use the latest kernel config file or kernel
+          database file to find the appropriate kernel(s) for the given input 
+          file.
+        </description>
+        <defaultPath>
+          $base/kernels/spk/
+        </defaultPath>
+        <filter>*.bsp</filter>
+      </parameter>
+
+      <parameter name="IK">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined instrument kernel file.
+        </brief>
+        <description>
+          Naif kernel file to be used for the instrument in place of the
+          automated instrument kernel. The IK kernel will be referenced in the
+          keyword Instrument by the resulting Kernel group.  If none is 
+          specified, spiceinit will use the latest kernel config file or kernel
+          database file to find the appropriate kernel(s) for the given input 
+          file.
+        </description>
+        <defaultPath>
+          $ISIS3DATA
+        </defaultPath>
+        <filter>*.ti</filter>
+      </parameter>
+
+      <parameter name="SCLK">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined spacecraft clock kernel file.
+        </brief>
+        <description>
+          Naif kernel file to be used for the spacecraft clock in place of the
+          automated spacecraft clock kernel. The SCLK kernel will be referenced
+          in the keyword Instrument by the resulting Kernel group.  If none is 
+          specified, spiceinit will use the latest kernel config file or kernel
+          database file to find the appropriate kernel(s) for the given input 
+          file.
+        </description>
+        <defaultPath>
+          $ISIS3DATA
+        </defaultPath>
+        <filter>*.tsc</filter>
+      </parameter>
+
+      <parameter name="CK">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined spacecraft pointing kernel file.
+        </brief>
+        <description>
+          Naif kernel file to be used for the spacecraft pointing in place of
+          the automated spacecraft pointing kernel. The CK kernel will be 
+          referenced in the keyword InstrumentPointing by the resulting Kernel 
+          group. If none is specified, spiceinit will use the latest kernel 
+          config file or kernel database file to find the appropriate kernel(s)
+          for the given input file.
+        </description>
+        <defaultPath>
+          $ISIS3DATA
+        </defaultPath>
+        <filter>*.bc</filter>
+      </parameter>
+
+       <parameter name="FK">
+         <type>filename</type>
+         <internalDefault>none</internalDefault>
+         <fileMode>input</fileMode>
+         <brief>
+           User defined frames kernel file.
+         </brief>
+         <description>
+           Naif kernel file to be used for the instrument frame in place of the
+           automated frames kernel. The FK kernel will be referenced in the
+           keyword InstrumentPointing by the resulting Kernel group.
+           Note: If you enter a filename for CK some instruments may require a
+           frame kernel as well. If none is specified, spiceinit will use the 
+           latest kernel config file or kernel database file to find the 
+           appropriate kernel(s) for the given input file.
+         </description>
+         <defaultPath>
+           $ISIS3DATA
+         </defaultPath>
+         <filter>*.tf</filter>
+       </parameter>
+
+
+      <parameter name="SPK">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined spacecraft position kernel file.
+        </brief>
+        <description>
+          Naif kernel file to be used for the spacecraft position in place of
+          the automated spacecraft position kernel. The SPK kernel will be
+          referenced in the keyword InstrumentPosition by the resulting Kernel
+          group. If none is specified, spiceinit will use the latest kernel 
+          config file or kernel database file to find the appropriate kernel(s)
+          for the given input file.
+        </description>
+        <defaultPath>
+          $ISIS3DATA
+        </defaultPath>
+        <filter>*.bsp</filter>
+      </parameter>
+
+      <parameter name="IAK">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined instrument addendum kernel file.
+        </brief>
+        <description>
+          Naif formatted kernel file to be used for the ISIS specific instrument
+          addendum kernel, in place of the automated. The IAK kernel will be
+          referenced in the keyword InstrumentAddendum by the resulting Kernel
+          group. If none is specified, spiceinit will use the latest kernel 
+          config file or kernel database file to find the appropriate kernel(s) 
+          for the given input file.
+        </description>
+        <defaultPath>
+          $ISIS3DATA
+        </defaultPath>
+        <filter>*.ti</filter>
+      </parameter>
+
+      <parameter name="EXTRA">
+        <type>filename</type>
+        <internalDefault>none</internalDefault>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined extra kernel file.
+        </brief>
+        <description>
+          Optional extra naif formatted kernel file. The EXTRA kernel will be
+          referenced in the keyword Extra by the resulting Kernel group.
+        </description>
+        <defaultPath>
+          $ISIS3DATA
+        </defaultPath>
+      </parameter>
+    </group>
+
+    <group name="Shape Model Parameters ">
+      <parameter name="SHAPE">
+        <type>string</type>
+        <default><item>SYSTEM</item></default>
+        <brief>
+          Select the definition of the shape model
+        </brief>
+        <description>
+          ISIS camera models can use a shape model (a  projected ISIS cube that defines the radii for a global or regional area).  You can choose
+          to select a shape model or to use the definition of the ellipsoid found in the planetary constants (PCK) file.
+        </description>
+        <list>
+          <option value="ELLIPSOID">
+            <brief>Use triiaxial ellipsoid from PCK</brief>
+            <description>The camera will use the radii defined in the planetary constants file (PCK) when determining intersections of the body surface</description>
+            <exclusions>
+              <item>MODEL</item>
+            </exclusions>
+          </option>
+          <option value="SYSTEM">
+            <brief>Search system for a default shape model</brief>
+            <description>
+              This option will search the default system data area ($ISIS3DATA/base/dems) for a shape model that matches the target of the input cube.  If none are
+              found then no shape model will be used and the default ellipsoid parameters found in the planetary constants (PCK) file define the shape.
+            </description>
+            <exclusions>
+              <item>MODEL</item>
+            </exclusions>
+          </option>
+          <option value="USER">
+            <brief>User specified shape model file</brief>
+            <description>The camera will use shape model defined by the parameter MODEL</description>
+          </option>
+        </list>
+      </parameter>
+
+      <parameter name="MODEL">
+        <type>cube</type>
+        <fileMode>input</fileMode>
+        <brief>
+          User defined ISIS cube shape model.
+        </brief>
+        <description>
+          A map projected ISIS cube which contains the radii of the target.  The file can cover more than the input cube (FROM) but must minimally cover the data in the input cube.
+        </description>
+        <defaultPath>$base//dems/</defaultPath>
+        <filter>*.cub</filter>
+      </parameter>
+    </group>
+
+    <group name="Time Parameters">
+      <parameter name="STARTPAD">
+        <type>double</type>
+        <minimum inclusive="true">0.0</minimum>
+        <brief>
+            Time padding (in seconds) to load from the kernels before the start time of the image
+        </brief>
+        <description>
+          When the kernels for an image are loaded, by default only what the image requires is loaded. 
+          By setting this option, the loaded kernels start at the specified amount of time before the 
+          image start time. Using this option for framing cameras could significantly decrease the
+          accuracy of the Naif information because this will cause the information to be interpolated
+          between the STARTPAD and ENDPAD.
+        </description>
+        <default><item>0.0</item></default>
+      </parameter>
+      <parameter name="ENDPAD">
+        <type>double</type>
+        <minimum inclusive="true">0.0</minimum>
+        <brief>
+            Time padding (in seconds) to load from the kernels after the end time of the image
+        </brief>
+        <description>
+          When the kernels for an image are loaded, by default only what the image requires is loaded. 
+          By setting this option, the loaded kernels end at the specified amount of time after the 
+          image end time. Using this option for framing cameras could significantly decrease the
+          accuracy of the Naif information because this will cause the information to be interpolated
+          between the STARTPAD and ENDPAD.
+        </description>
+        <default><item>0.0</item></default>
+      </parameter>
+    </group>
+
+    <group name="Spice Service Parameters">
+      <parameter name="URL">
+        <type>string</type>
+        <brief>The Spice Service URL</brief>
+        <description>
+          This is where a request for spice data is sent. The default is the
+          USGS SPICE server.
+        </description>
+        <default><item>http://services.isis.astrogeology.usgs.gov/cgi-bin/spiceinit.cgi</item></default>
+      </parameter>
+      <parameter name="PORT">
+        <type>integer</type>
+        <brief>The Spice Service Port</brief>
+        <description>
+          This is the port on which a request for spice data is sent. The USGS
+          server works on port 80.
+        </description>
+        <default><item>80</item></default>
+        <minimum inclusive="yes">0</minimum>
+      </parameter>
+    </group>
+  </groups>
+
+  <examples>
+    <example>
+      <brief>
+        Example of spiceinit using default parameters.
+      </brief>
+
+      <description>
+        This example shows how to use spiceinit using the default parameters. 
+        That is, the SPICE data will be attached to the cube labels (attach=yes), 
+        Only reconstructed kernel types will be allowed for ck and spk kernels,
+        the default system kernels will be found in the kernel database files, 
+        a default shape model will be looked for in the system, and 
+        no time parameters will be set.
+      </description>
+
+      <terminalInterface>
+        <commandLine>
+          from=inputCube.cub 
+        </commandLine>
+        <description>
+          An example of how to run this program from the command line. 
+        </description>
+      </terminalInterface>
+
+      <guiInterfaces>
+        <guiInterface>
+          <image width="535" height="550" src="assets/images/spiceinit_440w_550h.jpg">
+          <brief>
+            Example GUI
+          </brief>
+            <description>
+              An example of how to run this program using the GUI. Note that 
+              Kernel data that has been found can be seen in the log window.  
+            </description>
+            <thumbnail width="195" height="200" src="assets/thumbs/spiceinit_160w_200h.jpg" caption="Example of GUI command"/>
+          </image>
+        </guiInterface>
+      </guiInterfaces>
+
+      <dataFiles>
+        <dataFile path="assets/dataFiles/inputCubeLabel.pvl">
+          <brief>
+            Cube labels before spiceinit.
+          </brief>
+          <description>
+            This is the cube labels of the input cube before spiceinit is run. 
+          </description>
+          <parameterName>
+            FROM
+          </parameterName>
+        </dataFile>
+        <dataFile path="assets/dataFiles/spiceinitCubeLabel.pvl">
+          <brief>
+            Cube labels after spiceinit.
+          </brief>
+          <description>
+            This is the cube labels of the input cube after spiceinit has been 
+            run.
+          </description>
+          <parameterName>
+            FROM
+          </parameterName>
+        </dataFile>
+      </dataFiles>    
+    </example>
+  </examples>
+
+</application>

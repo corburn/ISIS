@@ -1,0 +1,362 @@
+ifneq ($(SRCS), $(BLANK))
+error:
+	echo "Please use an updated makefile.";
+	echo "This can be found at $$ISISROOT/make/Makefile.objs";
+endif
+
+include $(ISISROOT)/make/isismake.os
+
+
+INCS  := $(wildcard *.h)
+
+# Figure out Qt Q_OBJECTS
+
+# QT - get all header files with 'Q_OBJECT' Output: '%.h: QOBJECT'
+ifneq ($(INCS), $(BLANK))
+  QOBJ  := $(shell $(GREP) -HI -m1 '^ *Q_OBJECT *$$' $(INCS))
+
+  # filter out 'Q_OBJECT' from '%.h: QOBJECT'
+  QCOLN := $(filter-out Q_OBJECT, $(QOBJ))
+
+  # filter out ':' from '%.h:'
+  QINC  := $(subst  :, , $(QCOLN))
+endif
+
+# Get CPPs that dont include intermediate files or the unit test (if object)
+CPPS  := $(wildcard *.cpp *.cc) # List of all compilable extensions!
+CPPS  := $(filter-out moc_%.cpp,    $(CPPS))
+CPPS  := $(filter-out unitTest.cpp, $(CPPS))
+
+# Handle Qt resource files (qrc)
+QRCS := $(wildcard *.qrc)
+
+QTRESOURCEFILES := $(QRCS:%.qrc=qrc_%.cpp)
+
+# Protocol buffer files
+PROTOS := $(wildcard *.proto)
+
+# Sort removes duplicates... make sure we have proto headers
+INCS   := $(sort $(INCS) $(PROTOS:%.proto=%.pb.h))
+INCS   := $(filter-out %Tester.h, $(INCS))
+
+# Sources include Qt moc files and qrc files
+SRCS  := $(QTRESOURCEFILES) $(QINC:%.h=moc_%.cpp) $(PROTOS:%.proto=%.pb.cc) $(CPPS)
+SRCS  := $(sort $(SRCS))
+
+# Ui Files
+UIFILES   := $(wildcard *.ui)
+UIHEADERS := $(UIFILES:%.ui=ui_%.h)
+
+# Every cpp/cc/c generates an object (.o)
+OBJS  := $(SRCS:%.cpp=%.o)
+OBJS  := $(OBJS:%.cc=%.o)
+OBJS  := $(OBJS:%.c=%.o)
+INSTALLOBJS := $(filter-out %Tester.o, $(OBJS))
+CSMES := $(INSTALLOBJS:%.o=%.o.csmes)
+
+ROOTINCLUDES = $(addprefix $(ISISROOT)/inc/, $(INCS))
+PLUGINS      = $(strip $(wildcard *.plugin))
+LIBRARY      = lib$(shell basename $(CURDIR))
+ARCHIVELIB   = $(LIBRARY).a
+SHAREDLIB    = $(LIBRARY).$(SHAREDLIBEXT)
+PROTOS       = $(wildcard *.proto)
+PROTOSGEN    = $(wildcard *.pb.*)
+PROTOSOBJ    = $(wildcard *.pb.o)
+MOCINC       = $(wildcard *.h)
+MOCGEN       = $(wildcard moc_*.cpp)
+
+#TODO: This is obsolete. We need to not require these any more.
+#  These cause targets such as .cpp.o to work properly.
+.SUFFIXES:			#eliminate default suffixes
+.SUFFIXES: .cpp .o
+.SUFFIXES: .xml .html
+.SUFFIXES: .a .so .dylib
+.SUFFIXES: .proto .pb.h .pb.cc
+.SUFFIXES: .cc .o
+
+object: $(UIHEADERS) protos
+	if [ "$(OBJS)" != "" ]; then   \
+	  $(MAKE) $(OBJS);             \
+	fi
+
+.cpp.o: protos qtmoc
+	export PATH="$(CODE_COVERAGE_PATH_DIR):$$PATH"; \
+	$(CXX) $(ALLINCDIRS) $(ISISCPPFLAGS) -c -o $@ $?
+
+.cc.o:
+	export PATH="$(CODE_COVERAGE_PATH_DIR):$$PATH"; \
+	$(CXX) $(ALLINCDIRS) $(ISISCPPFLAGS) -c -o $@ $?
+
+ui_%.h: %.ui
+	$(UIC) -o $@ $^
+
+#  Its not necessarily $(LIBRARY)!
+.a.so :
+	if [ -d csmes ] && [ "$(CODE_COVERAGE_BIN_DIR)" != "" ]; then                                         \
+	  $(CODE_COVERAGE_BIN_DIR)/cmmerge csmes/*.csmes -o libisis$(ISISLIBVERSION).a.csmes; \
+	fi;                                                                                                   \
+	$(LDSHARED) $(ISISSHAREDFLAGS) $(ISISSHAREDON) -o libisis$(ISISLIBVERSION).$(SHAREDLIBEXT) $? $(ISISSHAREDOFF); \
+	$(LN) -f libisis$(ISISLIBVERSION).$(SHAREDLIBEXT) libisis$(ISISMAJOR).$(ISISMINOR).$(SHAREDLIBEXT); \
+	$(LN) -f libisis$(ISISMAJOR).$(ISISMINOR).$(SHAREDLIBEXT) libisis$(ISISMAJOR).$(SHAREDLIBEXT);
+
+#  Its not necessarily $(LIBRARY)!
+.a.dylib :
+	$(RM) -rd .objs;
+	$(MKDIR) .objs && cd .objs && $(AR) x ../$*.a;
+	$(LDSHARED) $(DYLIBFLAGS) $(ISISSHAREDON) -o $@ \
+	  -install_name $(CURDIR)/$@ $(DYLIBVERSION)  .objs/*.o $(ISISSHAREDOFF)
+	$(LN) -f libisis$(ISISLIBVERSION).$(SHAREDLIBEXT) libisis$(ISISMAJOR).$(ISISMINOR).$(SHAREDLIBEXT)
+	$(LN) -f libisis$(ISISMAJOR).$(ISISMINOR).$(SHAREDLIBEXT) libisis$(ISISMAJOR).$(SHAREDLIBEXT)
+	$(RM) -rd .objs;
+
+incs: protos $(ROOTINCLUDES)
+
+$(ROOTINCLUDES): $(INCS)
+	if [ ! -d $(ISISROOT)/inc ]; then \
+	  mkdir -p $(ISISROOT)/inc;       \
+	fi;                               \
+	cp -p ${@F} $(ISISROOT)/inc/;     \
+	chmod 644 $(ISISROOT)/inc/${@F};
+
+#  For plugins, it is the $(LIBRARY) (more precisely $(SHAREDLIB))
+install: object
+	if [ "$(PLUGINS)" != "" ]; \
+	then \
+	  touch $(ISISROOT)/lib/$(PLUGINS); \
+	  cat $(PLUGINS) >> $(ISISROOT)/lib/$(PLUGINS); \
+	  $(MAKE) plugin; \
+	  cp -p $(SHAREDLIB) $(ISISROOT)/lib; \
+	elif [ "$(INSTALLOBJS)" != "" ]; \
+	then \
+	  if [ "$(CODE_COVERAGE_BIN_DIR)" != "" ]; then \
+	    for CSMESFILE in $(CSMES); do \
+	      if [ -f $$CSMESFILE ]; then \
+	        if [ ! -d "$(ISISROOT)/lib/csmes" ]; then \
+	          $(MKDIR) "$(ISISROOT)/lib/csmes"; \
+	        fi; \
+	        $(CP) $$CSMESFILE "$(ISISROOT)/lib/csmes/"; \
+	      fi; \
+	    done; \
+	  fi; \
+	  ar $(ISISARFLAGS) -crs $(ISISROOT)/lib/libisis$(ISISLIBVERSION).a $(INSTALLOBJS); \
+	  $(RANLIB) $(ISISROOT)/lib/libisis$(ISISLIBVERSION).a; \
+	fi
+
+force: ;
+
+protos: $(PROTOS:%.proto=%.pb.h) $(PROTOS:%.proto=%.pb.cc)
+
+%.pb.cc %.pb.h: %.proto
+	$(PROTOC) -I$(<D) --cpp_out=$(<D) $^
+
+qtmoc: $(MOCINC:%.h=moc_%.cpp)
+
+moc_%.cpp: %.h
+	if [ "$(filter-out ' ', $(shell $(GREP) -sIE -m1 '^ *Q_OBJECT *$$' $(<F)))" == "Q_OBJECT" ]; \
+	then \
+	  $(MOC) $(MOCDEFINES) -o $@ $(<F); \
+	fi
+
+qrc_%.cpp: %.qrc
+	$(RCC) $(RCCDEFINES) -o $@ $(<F);
+	
+help:
+	echo "Isis Make Object Commands"
+	echo "------------------------ "
+	echo "make                            : Builds the object"
+	echo "make MODE=DEBUG                 : Builds the object for stack tracing and memory"
+	echo "                                    debugging"
+	echo "make MODE=TC                    : Builds the object for generating test"
+	echo "                                    coverage reports. Reports will be generated when"
+	echo "                                    make test MODE=TC is executed."
+	echo "make plugin                     : Builds a plugin object if applicable"
+	echo "make install                    : Calls the make target and copies the object and"
+	echo "                                    plugin to $ISISROOT/..."
+	echo "make html                       : Builds the html page for the object"
+	echo "make clean                      : Removes the application, *.html and *.o files."
+	echo "                                    Also cleans the test directories"
+	echo "make sanitize                   : Calls the clean target then removes tttt* junk.*"
+	echo "                                    and TEMP* files"
+	echo "make unitTest                   : Make the unitTest application"
+	echo "make test                       : Runs the unitTests and print result"
+	echo "make test MODE=TC               : Run test, print result, and create test coverage"
+	echo "                                    reports"
+	echo "make test MODE=NOCLEAN          : Run test and print result, leave output" 
+	echo "make truthdata                  : Runs the unitTest and creates <Objectname>.truth"
+	echo "make ostruthdata                : Runs the unitTest and creates OS specific truth"
+	echo "make protos                     : Builds the object of google protocol buffer(*.proto) files"
+
+html: force
+	mkdir -p docbuild
+	cat $(ISISROOT)/src/docsys/Object/build//Programmer.conf         >  docbuild/ProgTester_temp.conf
+	echo "FILE_PATTERNS          = *.h *.cpp *.doxydef"              >> docbuild/ProgTester_temp.conf
+	echo "OUTPUT_DIRECTORY = $(CURDIR)/"                             >> docbuild/ProgTester_temp.conf
+	echo "STRIP_FROM_PATH  = $(CURDIR)/"                             >> docbuild/ProgTester_temp.conf
+	echo "LATEX_OUTPUT     = $(CURDIR)/html/latex"                   >> docbuild/ProgTester_temp.conf
+	echo "LATEX_CMD_NAME   = $(LATEX)"                               >> docbuild/ProgTester_temp.conf
+	echo "INPUT            = $(ISISROOT)/src/docsys/Object/build/isisDoxyDefs.doxydef $(CURDIR)/"  >> docbuild/ProgTester_temp.conf
+	echo "HTML_HEADER      = $(ISISROOT)/src/docsys/Object/build/IsisObjectHeaderProgTester.html" >> docbuild/ProgTester_temp.conf
+	echo "HTML_FOOTER      = $(ISISROOT)/src/docsys/Object/build/IsisObjectFooterProgTester.html" >> docbuild/ProgTester_temp.conf
+	echo "HTML_OUTPUT      = html"                                   >> docbuild/ProgTester_temp.conf
+	echo "TAGFILES         = "                                       >> docbuild/ProgTester_temp.conf
+	echo "HTML_STYLESHEET  = $(ISISROOT)/src/docsys/Object/build/doxygen.css"                     >> docbuild/ProgTester_temp.conf
+	echo "IMAGE_PATH       = $(CURDIR)/"                             >> docbuild/ProgTester_temp.conf
+
+	if [ "$(findstring LOUD,$(MODE))" = "LOUD" ]; \
+	then \
+	  echo "QUIET                  = NO"                             >> docbuild/ProgTester_temp.conf;   \
+	echo "WARNINGS               = YES"                              >> docbuild/ProgTester_temp.conf;   \
+	echo "WARN_IF_UNDOCUMENTED   = YES"                              >> docbuild/ProgTester_temp.conf;   \
+	  echo "WARN_IF_DOC_ERROR      = YES"                            >> docbuild/ProgTester_temp.conf;   \
+	  echo "WARN_NO_PARAMDOC       = YES"                            >> docbuild/ProgTester_temp.conf;   \
+	else \
+	  echo "QUIET                  = YES"                            >> docbuild/ProgTester_temp.conf;   \
+	  echo "WARNINGS               = YES"                            >> docbuild/ProgTester_temp.conf;   \
+	  echo "WARN_IF_UNDOCUMENTED   = YES"                            >> docbuild/ProgTester_temp.conf;   \
+	  echo "WARN_IF_DOC_ERROR      = YES"                            >> docbuild/ProgTester_temp.conf;   \
+	  echo "WARN_NO_PARAMDOC       = YES"                            >> docbuild/ProgTester_temp.conf;   \
+	fi 
+
+	if [[ "$(DOT_PATH)" != "" ]];                                          \
+	then                                                                   \
+	  echo "DOT_PATH = $(DOT_PATH)" >> docbuild/ProgTester_temp.conf;      \
+	fi
+
+	$(DOXYGEN) docbuild/ProgTester_temp.conf
+	-$(RM) -r docbuild
+	echo "View your documentation by opening the file html/index.html in a browser"
+
+clean:  localclean
+	$(RM) $(OBJS) $(PROTOSGEN) $(MOCGEN) unitTest.o unitTest print.prt    \
+	  $(UIHEADERS) $(ARCHIVELIB) $(SHAREDLIB) libisis$(ISISLIBVERSION).a  \
+	  libisis$(ISISLIBVERSION).so libisis$(ISISLIBVERSION).dylib          \
+	  unitTest.output;                                                    \
+	$(RM) -rf html scopecoverage scopecoverage.html                       \
+	  linecoverage linecoverage.html functioncoverage                     \
+	  functioncoverage.html .objs *.csexe *.csmes
+
+localclean:
+	if [ "$(findstring cleanlocal,$(shell $(GREP) cleanlocal Makefile))" = "cleanlocal" ]; \
+	then \
+	   $(MAKE) cleanlocal; \
+	fi
+
+clean_protos:
+	-$(RM) $(PROTOSGEN)
+
+sanitize: clean
+	-$(RM) tttt* junk.* TEMP*
+
+test: unitTest
+	if [ -f unitTest.csexe ]; then              \
+	  $(RM) unitTest.csexe;                     \
+	fi;                                         \
+	$(ISISROOT)/scripts/unitTester $(HOST_OS) ; \
+	temp=$$? ;                                  \
+	if test $$temp -eq 0 ;                      \
+	then                                        \
+	  echo "Ok";                                \
+	elif test $$temp -eq 2 ;                    \
+	then                                        \
+	  echo "unitTest.cpp not found";            \
+	elif test $$temp -eq 1 ;                    \
+	then                                        \
+	  echo "`basename $(CURDIR)`.truth not found"; \
+	elif test $$temp -eq 3 ;                    \
+	then                                        \
+	  echo "Could not make unitTest";           \
+	elif test $$temp -eq 4 ;                    \
+	then                                        \
+	  echo "UnitTest aborted";                  \
+	elif test $$temp -eq 5 ;                    \
+	then                                        \
+	  echo "Failed";                            \
+	else                                        \
+	  echo "Unexpected system error";           \
+	fi;                                         \
+	if [ "$(CODE_COVERAGE_BIN_DIR)" != "" ] && [ -f "unitTest.csexe" ] &&       \
+	   [ "$(CSMES)" != "" ]; then                                               \
+	  PASSFAILARG="-F";                                                         \
+	  if [ "$$temp" == "0" ]; then                                              \
+	    PASSFAILARG="-P";                                                       \
+	  fi;                                                                       \
+	  $(CODE_COVERAGE_BIN_DIR)/cmmerge $(CSMES) -o `basename $$PWD`.csmes;      \
+	  $(CODE_COVERAGE_BIN_DIR)/cmcsexeimport -t "`basename $$PWD` unit test"    \
+	      -e unitTest.csexe -m "`basename $$PWD`.csmes" $$PASSFAILARG;          \
+	  $(ECHO) -ne "Scope Coverage:      ";                                      \
+	  $(CODE_COVERAGE_BIN_DIR)/cmreport                                         \
+	      --title="`basename $$PWD` Unit Test Scope Coverage"                   \
+	      -m "`basename $$PWD`.csmes" --select=".*" --bargraph --toc --stat     \
+	      --global=all --method=all --source=all --execution=all                \
+	      --method-sort=coverage --execution-sort=coverage                      \
+	      --source-sort=coverage -h scopecoverage;                              \
+	  $(ECHO) -ne "Line Coverage:       ";                                      \
+	  $(CODE_COVERAGE_BIN_DIR)/cmreport                                         \
+	      --title="`basename $$PWD` Unit Test Line Coverage"                    \
+	      -m "`basename $$PWD`.csmes" --select=".*" --bargraph --toc --stat     \
+	      --global=all --method=all --source=all --execution=all                \
+	      --method-sort=coverage --execution-sort=coverage                      \
+	      --source-sort=coverage --line-coverage -h linecoverage;               \
+	  $(ECHO) -ne "Function Coverage:   ";                                      \
+	  $(CODE_COVERAGE_BIN_DIR)/cmreport                                         \
+	      --title="`basename $$PWD` Unit Test Function Coverage"                \
+	      -m "`basename $$PWD`.csmes" --select=".*" --bargraph --toc --stat     \
+	      --global=all --method=all --source=all --execution=all                \
+	      --method-sort=coverage --execution-sort=coverage                      \
+	      --source-sort=coverage --function-coverage -h functioncoverage;       \
+	fi; 
+
+# The .a file is copied in Darwin because the ar command does not like
+#   to extract the same archive twice, regardless of permissions or symlink
+unitTest: $(OBJS) unitTest.o
+	export PATH="$(CODE_COVERAGE_PATH_DIR):$$PATH"; \
+	if [ "$(HOST_ARCH)" == "Linux" ]; then                                       \
+	  $(CP) $(ISISROOT)/lib/libisis$(ISISLIBVERSION).a                           \
+	      libisis$(ISISLIBVERSION).a;                                            \
+	  if [ -f "$(ISISROOT)/lib/libisis$(ISISLIBVERSION).a.csmes" ]; then         \
+	    $(CP) $(ISISROOT)/lib/libisis$(ISISLIBVERSION).a.csmes                   \
+	      libisis$(ISISLIBVERSION).a.csmes;                                      \
+	  fi;                                                                        \
+	  $(AR) $(ISISARFLAGS) -rs libisis$(ISISLIBVERSION).a $(OBJS);               \
+	  $(RANLIB) libisis$(ISISLIBVERSION).a;                                      \
+	  $(LDSHARED) $(ISISSHAREDFLAGS) $(ISISSHAREDON)                             \
+	      -o libisis$(ISISLIBVERSION).$(SHAREDLIBEXT) libisis$(ISISLIBVERSION).a \
+	      $(ISISSHAREDOFF);                                                      \
+	  $(RM) libisis$(ISISLIBVERSION).a libisis$(ISISLIBVERSION).a.csmes;         \
+	  dollar='$$';                                                               \
+	  $(CXX) $(ALLLIBDIRS)                                                       \
+	      -Xlinker "-rpath"                                                      \
+	      -Xlinker "$${dollar}ORIGIN" $(ISISLDFLAGS)                             \
+	      -o $@ unitTest.o $(ALLLIBS);                                           \
+	elif [ "$(HOST_ARCH)" == "Darwin" ]; then                                    \
+	  $(MKDIR) .objs;                                                            \
+	  cd .objs;                                                                  \
+	  cp $(ISISROOT)/lib/libisis$(ISISLIBVERSION).a .;                           \
+	  $(AR) x libisis$(ISISLIBVERSION).a;                                        \
+	  $(RM) libisis$(ISISLIBVERSION).a;                                          \
+	  cd ..;                                                                     \
+	  if [ "$(OBJS)" != "" ]; then                                               \
+	    $(CP) $(OBJS) .objs/;                                                    \
+	  fi;                                                                        \
+	  $(LDSHARED) $(DYLIBFLAGS) $(ISISSHAREDON)                                  \
+	      -o libisis$(ISISLIBVERSION).$(SHAREDLIBEXT)                            \
+	      -install_name $(CURDIR)/libisis$(ISISLIBVERSION).$(SHAREDLIBEXT)       \
+	      $(DYLIBVERSION) .objs/*.o $(ISISSHAREDOFF);                            \
+	  $(CXX) $(ALLLIBDIRS) $(ISISLDFLAGS)                                        \
+	      -o $@ unitTest.o $(ALLLIBS);                                           \
+	  $(RM) -rd .objs;                                                           \
+	fi;
+
+plugin: $(OBJS)
+	$(LDSHARED) $(ALLLIBDIRS) $(ISISSHAREDFLAGS) $(ISISSHAREDON) \
+	    -o $(SHAREDLIB) $(OBJS) $(ISISSHAREDOFF)
+
+truthdata: unitTest
+	./unitTest >& `basename $(CURDIR)`.truth;
+	
+ostruthdata: unitTest
+	if [ "$(HOST_OS)" = "" ]; then \
+	  ./unitTest >& `basename $(CURDIR)`_$(HOST_ARCH)_$(HOST_MACH).truth; \
+	else \
+	  ./unitTest >& `basename $(CURDIR)`_$(HOST_ARCH)_$(HOST_MACH)_$(HOST_OS).truth; \
+	fi

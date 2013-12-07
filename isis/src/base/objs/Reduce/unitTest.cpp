@@ -1,0 +1,64 @@
+#include "Isis.h"
+
+#include <iostream>
+#include <string>
+#include <cmath>
+
+#include <QFile>
+
+#include "Cube.h"
+#include "CubeAttribute.h"
+#include "IString.h"
+#include "ProcessByLine.h"
+#include "PvlGroup.h"
+#include "Reduce.h"
+#include "UserInterface.h"
+
+using namespace std;
+using namespace Isis;
+
+void IsisMain() {
+  Preference::Preferences(true);
+  ProcessByLine p;
+  UserInterface &ui = Application::GetUserInterface();
+  vector<QString> bands;
+
+  p.SetInputCube("FROM");
+  Cube icube;
+
+  CubeAttributeInput cai(ui.GetAsString("FROM"));
+  bands = cai.bands();
+
+  icube.setVirtualBands(bands);
+  icube.open(ui.GetFileName("FROM"));
+
+  double sscale = 3;
+  double lscale = 4;
+  int ons = (int)ceil((double)icube.sampleCount() / sscale);
+  int onl = (int)ceil((double)icube.lineCount() / lscale);
+
+  // Reduce by "Near"
+  Cube *ocube = p.SetOutputCube("TO", ons, onl, icube.bandCount());
+  Nearest near(&icube, sscale, lscale);
+  p.ClearInputCubes();
+  cout << "Reduce by Near\n";
+  p.ProcessCubeInPlace(near, false);
+  PvlGroup results = near.UpdateOutputLabel(ocube);
+  p.Finalize();
+  cout << results << endl;
+
+  // Reduce by "Average"
+  p.SetInputCube("FROM");
+  ocube=p.SetOutputCube("TO2", ons, onl, icube.bandCount());
+  p.ClearInputCubes();
+  Average avg(&icube, sscale, lscale, 0.5, "scale");
+  cout << "\nReduce by Average\n";
+  p.ProcessCubeInPlace(avg, false);
+  results = avg.UpdateOutputLabel(ocube);
+  cout << results << endl;
+
+  p.Finalize();
+  icube.close();
+  QFile::remove(ui.GetFileName("TO"));
+  QFile::remove(ui.GetFileName("TO2"));
+}

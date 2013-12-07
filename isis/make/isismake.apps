@@ -1,0 +1,277 @@
+ifneq ($(SRCS), $(BLANK))
+error:
+	echo "Please use an updated makefile.";
+	echo "This can be found at $$ISISROOT/make/Makefile.apps";
+endif
+
+include $(ISISROOT)/make/isismake.os
+
+
+INCS  := $(wildcard *.h)
+
+# Figure out Qt Q_OBJECTS
+
+# QT - get all header files with 'Q_OBJECT' Output: '%.h: QOBJECT'
+ifneq ($(INCS), $(BLANK))
+  QOBJ  := $(shell $(GREP) -HI -m1 '^ *Q_OBJECT *$$' $(INCS))
+
+  # filter out 'Q_OBJECT' from '%.h: QOBJECT'
+  QCOLN := $(filter-out Q_OBJECT, $(QOBJ))
+
+  # filter out ':' from '%.h:'
+  QINC  := $(subst  :, , $(QCOLN))
+endif
+
+# Get CPPs that dont include intermediate files or the unit test (if object)
+CPPS  := $(wildcard *.cpp *.cc) # List of all compilable extensions!
+CPPS  := $(filter-out moc_%.cpp,    $(CPPS))
+CPPS  := $(filter-out unitTest.cpp, $(CPPS))
+
+# Handle Qt resource files (qrc)
+QRCS := $(wildcard *.qrc)
+
+QTRESOURCEFILES := $(QRCS:%.qrc=qrc_%.cpp)
+
+# Protocol buffer files
+PROTOS := $(wildcard *.proto)
+
+# Sort removes duplicates... make sure we have proto headers
+INCS   := $(sort $(INCS) $(PROTOS:%.proto=%.pb.h))
+
+# Sources include Qt moc files and qrc files
+SRCS  := $(QTRESOURCEFILES) $(QINC:%.h=moc_%.cpp) $(PROTOS:%.proto=%.pb.cc) $(CPPS)
+SRCS  := $(sort $(SRCS))
+
+# Ui Files
+UIFILES   := $(wildcard *.ui)
+UIHEADERS := $(UIFILES:%.ui=ui_%.h)
+
+# Every cpp/cc/c generates an object (.o)
+OBJS  := $(SRCS:%.cpp=%.o)
+OBJS  := $(OBJS:%.cc=%.o)
+OBJS  := $(OBJS:%.c=%.o)
+CSMES := $(OBJS:%.o=%.o.csmes)
+
+BINS  := $(shell basename `pwd`)
+
+
+MOCINC       = $(wildcard *.h)
+MOCGEN       = $(wildcard moc_*.cpp)
+PROTOS       = $(wildcard *.proto)
+PROTOSGEN    = $(wildcard *.pb.*)
+PROTOSOBJ    = $(wildcard *.pb.o)
+
+#TODO: This is obsolete. We need to not require these any more.
+#  These cause targets such as .cpp.o to work properly.
+.SUFFIXES:
+.SUFFIXES: .cpp .o
+.SUFFIXES: .c .o
+.SUFFIXES: .xml .html
+.SUFFIXES: .proto .pb.h .pb.cc
+.SUFFIXES: .cc .o
+
+app:
+	$(MAKE) $(BINS)
+
+$(BINS): $(UIHEADERS) $(QTRESOURCEFILES) protos $(OBJS)
+	export PATH="$(CODE_COVERAGE_PATH_DIR):$$PATH"; \
+	$(CXX) $(ALLLIBDIRS) $(ISISLDFLAGS) $(ISISLDRPATH) -o $@ $(OBJS) $(ALLLIBS)
+
+.cpp.o: qtmoc
+	export PATH="$(CODE_COVERAGE_PATH_DIR):$$PATH"; \
+	$(CXX) $(ALLINCDIRS) $(ISISCPPFLAGS) $(CPPFLAGS) -c -o $@ $?
+
+.c.o :
+	export PATH="$(CODE_COVERAGE_PATH_DIR):$$PATH"; \
+	$(CC) $(ALLINCDIRS) $(ISISCFLAGS) $(CFLAGS) -c -o $@ $?
+
+.cc.o: 
+	export PATH="$(CODE_COVERAGE_PATH_DIR):$$PATH"; \
+	$(CXX) $(ALLINCDIRS) $(ISISCPPFLAGS) -c -o $@ $?
+
+.xml.html :
+	$(XALAN) $(XALAN_VALIDATE_OPTION) $(XALAN_OUTFILE_OPTION) $@ $(XALAN_INFILE_OPTION) $? $(XALAN_XSL_OPTION) $(ISISROOT)/src/docsys/Application/presentation/ProgTester/IsisApplicationDocStyle.xsl
+
+protos: $(PROTOS:%.proto=%.pb.h) $(PROTOS:%.proto=%.pb.cc)
+
+%.pb.cc %.pb.h: %.proto
+	protoc -I$(<D) --cpp_out=$(<D) $^
+
+ui_%.h: %.ui
+	$(UIC) -o $@ $^
+
+qtmoc: $(MOCINC:%.h=moc_%.cpp)
+
+moc_%.cpp: %.h
+	if [ "$(filter-out ' ', $(shell $(GREP) -sIE -m1 '^ *Q_OBJECT *$$' $(<F)))" == "Q_OBJECT" ]; \
+	then \
+	  $(MOC) $(MOCDEFINES) -o $@ $(<F); \
+	fi
+
+qrc_%.cpp: %.qrc
+	$(RCC) $(RCCDEFINES) -o $@ $(<F);
+
+quickclean:  localclean
+	$(RM) $(OBJS) $(BINS) $(PROTOSGEN) $(MOCGEN) `basename $(CURDIR)`.html \
+	  $(UIHEADERS) $(QTRESOURCEFILES) *.csexe *.csmes;                     \
+	$(RM) -r scopecoverage scopecoverage.html                              \
+	         linecoverage linecoverage.html                                \
+	         functioncoverage functioncoverage.html;
+
+clean:  localclean
+	$(RM) $(OBJS) $(BINS) $(PROTOSGEN) $(MOCGEN) `basename $(CURDIR)`.html \
+	  $(UIHEADERS) $(QTRESOURCEFILES) *.csexe *.csmes;                     \
+	$(RM) -r scopecoverage scopecoverage.html                              \
+	         linecoverage linecoverage.html                                \
+	         functioncoverage functioncoverage.html;                       \
+	if [ -d "tsts" ];                                                      \
+	then                                                                   \
+	  if [ -f "tsts/Makefile" ];                                           \
+	  then                                                                 \
+	    $(MAKE) --directory=tsts clean;                                    \
+	  fi;                                                                  \
+	fi
+
+localclean:
+	if [ "$(findstring cleanlocal,$(shell $(GREP) cleanlocal Makefile))" = "cleanlocal" ]; \
+	then                                                                                \
+	  $(MAKE) cleanlocal;                                                               \
+	fi
+
+sanitize: clean
+	$(RM) tttt* junk.* TEMP*
+
+install: app 
+	if [ ! -d "$(ISISROOT)/bin/xml" ];                                    \
+	then                                                                  \
+	  mkdir -p $(ISISROOT)/bin/xml;                                       \
+	fi;                                                                   \
+	                                                                      \
+	cp -p $(BINS) $(ISISROOT)/bin;                                        \
+	cp -p $(BINS).xml $(ISISROOT)/bin/xml;                                \
+	chmod 644 $(ISISROOT)/bin/xml/$(BINS).xml;                            \
+	                                                                      \
+	if [ "$(HOST_ARCH)" == "Linux" ]; then                                \
+	  dollar='$$';                                                        \
+	  newRpath=`echo "$${dollar}ORIGIN/../lib"`;                          \
+	  newRpath=`echo "$$newRpath:$${dollar}ORIGIN/../3rdParty/lib"`;      \
+	  $(PATCHELF) --set-rpath "$$newRpath" $(ISISROOT)/bin/$(BINS);       \
+	elif [ "$(HOST_ARCH)" == "Darwin" ]; then                             \
+	  $(ISISROOT)/scripts/SetRunTimePath --bins                           \
+	    --libmap=$(ISISROOT)/scripts/isis_bins_paths.lis                  \
+	    --liblog=$(ISISROOT)/scripts/DarwinLibs.lis                       \
+	    --relocdir=$(ISISROOT)/3rdParty/lib:$(ISISROOT)/3rdParty:$(ISISROOT) \
+	    --errlog=DarwinErrors.lis                                         \
+	    $(ISISROOT)/bin/$(BINS) > /dev/null;                              \
+	  if [ -f "DarwinErrors.lis" ]; then                                  \
+	    cat DarwinErrors.lis;                                             \
+	  fi;                                                                 \
+	  $(RM) DarwinErrors.lis;                                             \
+	fi
+
+
+validxml:
+	$(XALAN) $(XALAN_VALIDATE_OPTION) $(XALAN_OUTFILE_OPTION) /dev/null $(XALAN_INFILE_OPTION) $(BINS).xml $(XALAN_XSL_OPTION) $(ISISROOT)/src/docsys/Application/presentation/ProgTester/IsisApplicationDocStyle.xsl;
+
+docs:
+	mkdir -p $(ISISROOT)/src/docsys/Application/data/`basename $(CURDIR)`
+	cp -p `basename $(CURDIR)`.xml $(ISISROOT)/src/docsys/Application/data/`basename $(CURDIR)`
+	if [ -d assets ]; \
+	then \
+	  cp -pr assets $(ISISROOT)/src/docsys/Application/data/`basename $(CURDIR)`; \
+	fi
+	chmod -R +w $(ISISROOT)/src/docsys/Application/data/`basename $(CURDIR)`
+
+test:
+	if [ ! -d "tsts" ];              \
+	then                             \
+	  echo "";                       \
+	  printf %-6s "";                \
+	  echo "no tsts folder";         \
+	elif [ -f "tsts/Makefile" ];     \
+	then                             \
+	  $(MAKE) --directory=tsts test; \
+	else                             \
+	  echo "";                       \
+	  printf %-6s "";                \
+	  echo "no makefile";            \
+	fi;                              \
+	if [ "$(CODE_COVERAGE_BIN_DIR)" != "" ]; then                               \
+	  CSEXEFILES=(`find tsts -name "*.csexe"`);                                 \
+	  for CSMESFILE in $(CSMES); do                                             \
+	    if [ ! -f "$$CSMESFILE" ]; then                                         \
+	      echo "Please build `basename $$PWD` locally with test coverage before"\
+	           "running the test with test coverage";                           \
+	      exit 1;                                                               \
+	   fi;                                                                      \
+	  done;                                                                     \
+	  $(CODE_COVERAGE_BIN_DIR)/cmmerge $(CSMES) -o `basename $$PWD`.csmes;      \
+	  for CSEXEFILE in $${CSEXEFILES[@]}; do                                    \
+	    CASENAME=`echo $$CSEXEFILE | sed 's#\\(.*tsts/\\)\([^/]*\)\(/.*\)#\\2#'`; \
+	    EXETESTNAME="`basename $$PWD` Application Test (case $$CASENAME)";      \
+	    $(CODE_COVERAGE_BIN_DIR)/cmcsexeimport -t "$$EXETESTNAME"               \
+	        -e $$CSEXEFILE -m "`basename $$PWD`.csmes";                         \
+	  done;                                                                     \
+	  $(ECHO) -ne "Scope Coverage:      ";                                      \
+	  $(CODE_COVERAGE_BIN_DIR)/cmreport                                         \
+	      --title="`basename $$PWD` Application Test Scope Coverage"            \
+	      -m "`basename $$PWD`.csmes" --select=".*" --bargraph --toc --stat     \
+	      --global=all --method=all --source=all --execution=all                \
+	      --method-sort=coverage --execution-sort=coverage                      \
+	      --source-sort=coverage -h scopecoverage;                              \
+	  $(ECHO) -ne "Line Coverage:       ";                                      \
+	  $(CODE_COVERAGE_BIN_DIR)/cmreport                                         \
+	      --title="`basename $$PWD` Application Test Line Coverage"             \
+	      -m "`basename $$PWD`.csmes" --select=".*" --bargraph --toc --stat     \
+	      --global=all --method=all --source=all --execution=all                \
+	      --method-sort=coverage --execution-sort=coverage                      \
+	      --source-sort=coverage --line-coverage -h linecoverage;               \
+	  $(ECHO) -ne "Function Coverage:   ";                                      \
+	  $(CODE_COVERAGE_BIN_DIR)/cmreport                                         \
+	      --title="`basename $$PWD` Application Test Function Coverage"         \
+	      -m "`basename $$PWD`.csmes" --select=".*" --bargraph --toc --stat     \
+	      --global=all --method=all --source=all --execution=all                \
+	      --method-sort=coverage --execution-sort=coverage                      \
+	      --source-sort=coverage --function-coverage -h functioncoverage;       \
+	fi; 
+
+testdir:
+	if [ ! -d "tsts" ];                                           \
+	then                                                          \
+	  $(MKDIR) tsts;                                              \
+	  $(CP) $(ISISROOT)/make/Makefile.appstststree tsts/Makefile; \
+	else                                                          \
+	  echo "";                                                    \
+	  printf %-6s "";                                             \
+	  echo "tsts folder already exists";                          \
+	fi
+
+html:
+	$(MAKE) `basename $(CURDIR)`.html;
+
+help:
+	echo "Isis Make Application Commands"
+	echo "------------------------ "
+	echo "make                            : Builds the Application"
+	echo "make MODE=DEBUG                 : Builds the Application for stack tracing and"
+	echo "                                    memory debugging"
+	echo "make MODE=TC                    : Builds the Application for generating test"
+	echo "                                    coverage reports. Reports will be generated when"
+	echo "                                    make test MODE=TC is executed."
+	echo "make install                    : Calls the make target and copies the application"
+	echo "                                    to $ISISROOT/bin/"
+	echo "make html                       : Builds the html page for the Application"
+	echo "make docs                       : Copies the .xml and assets folder to docsys area"
+	echo "                                    for full documentation building"
+	echo "make quickclean                 : Removes the application, *.html and *.o files."
+	echo "make clean                      : Removes the application, *.html and *.o files."
+	echo "                                    Also cleans the test directories"
+	echo "make sanitize                   : Calls the clean target then removes tttt* junk.*"
+	echo "                                    and TEMP* files"
+	echo "make testdir                    : Make the test directory for new applications"
+	echo "make test                       : Run all app tests and print result, remove"
+	echo "                                    output"
+	echo "make test MODE=TC               : Run test, print result, and create test coverage"
+	echo "                                    reports"
+	echo "make test MODE=NOCLEAN          : Run test and print result, leave output"
+

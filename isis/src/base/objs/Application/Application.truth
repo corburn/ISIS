@@ -1,0 +1,105 @@
+Testing Isis::Application Class ... 
+
+Group = Accounting
+  ConnectTime = 00:00:00.0
+  CpuTime     = 00:00:00.0
+End_Group
+
+Object = unittest
+  IsisVersion       = "3.2.2.0 | 2010-11-05"
+  ProgramVersion    = 2011-08-19
+  ProgramPath       = /work/users/jwalldren/jisis/prog/isis3/trunk/isis/src/b-
+                      ase/objs/Application
+  ExecutionDateTime = 2011-08-19T13:08:55
+  HostName          = rukuba
+  UserName          = jwalldren
+  Description       = "Unit test for Application class"
+
+  Group = UserParameters
+    FROM = unitTest.cub
+    TO   = $temporary/isisprocess_01.cub
+    TO2  = $temporary/isisprocess_02.cub
+    TO3  = $temporary/isisprocess_03.cub
+    TO4  = $temporary/isisprocess_04.cub
+  End_Group
+End_Object
+
+Can't test Gui methods
+  GuiLog(Pvl &results)
+  GuiLog(PvlGroup &results)
+  GuiLog(QString &results)
+  GuiReportErrorLog(iException &e)
+
+GuiHelpers ok
+
+In myFunct
+
+**PROGRAMMER ERROR** testing an error.
+
+Object = unittest
+  IsisVersion       = "3.2.2.0 | 2010-11-05"
+  ProgramVersion    = 2011-08-19
+  ProgramPath       = /work/users/jwalldren/jisis/prog/isis3/trunk/isis/src/b-
+                      ase/objs/Application
+  ExecutionDateTime = 2011-08-19T13:08:55
+  HostName          = rukuba
+  UserName          = jwalldren
+  Description       = "Unit test for Application class"
+
+  Group = UserParameters
+    FROM = unitTest.cub
+    TO   = $temporary/isisprocess_01.cub
+    TO2  = $temporary/isisprocess_02.cub
+    TO3  = $temporary/isisprocess_03.cub
+    TO4  = $temporary/isisprocess_04.cub
+  End_Group
+
+  Group = Accounting
+    ConnectTime = 00:00:00.0
+    CpuTime     = 00:00:00.0
+  End_Group
+
+  Group = Accounting
+    ConnectTime = 00:00:00.0
+    CpuTime     = 00:00:00.0
+  End_Group
+End_Object
+
+Object = unittest
+  IsisVersion       = "3.2.2.0 | 2010-11-05"
+  ProgramVersion    = 2011-08-19
+  ProgramPath       = /work/users/jwalldren/jisis/prog/isis3/trunk/isis/src/b-
+                      ase/objs/Application
+  ExecutionDateTime = 2011-08-19T13:08:55
+  HostName          = rukuba
+  UserName          = jwalldren
+  Description       = "Unit test for Application class"
+
+  Group = UserParameters
+    FROM = unitTest.cub
+    TO   = $temporary/isisprocess_01.cub
+    TO2  = $temporary/isisprocess_02.cub
+    TO3  = $temporary/isisprocess_03.cub
+    TO4  = $temporary/isisprocess_04.cub
+  End_Group
+
+  Group = Accounting
+    ConnectTime = 00:00:00.0
+    CpuTime     = 00:00:00.0
+  End_Group
+
+  Group = Accounting
+    ConnectTime = 00:00:00.0
+    CpuTime     = 00:00:00.0
+  End_Group
+
+  Group = Error
+    Program = ./unitTest
+    Class   = "PROGRAMMER ERROR"
+    Code    = 3
+    Message = "testing an error"
+    File    = unitTest.cpp
+    Line    = 16
+  End_Group
+End_Object
+End
