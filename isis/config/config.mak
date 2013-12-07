@@ -5,7 +5,7 @@
 SHELL=bash
 .SILENT:
 
-QMAKE ?= $(shell which qmake 2 >& /dev/null)
+QMAKE ?= $(shell which qmake 2> /dev/null)
 
 ifeq ($(QMAKE),)
   QMAKE := $(shell which qmake-mac 2 >& /dev/null)
