@@ -78,23 +78,24 @@ ISIS3LOCAL  ?= /usgs/pkgs/local/$(ISISLOCALVERSION)
 #---------------------------------------------------------------------------
 # Set up for Qt
 #---------------------------------------------------------------------------
-QTINCDIR = -I$(ISIS3LOCAL)/include/qt/qt4.8.0
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/Qt
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtCore
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtAssistant
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtGui
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtNetwork
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtOpenGL
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtScript
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtScriptTools
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtSql
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtSvg
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtTest
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtWebKit
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtXml
-QTINCDIR += -I$(ISIS3LOCAL)/include/qt/qt4.8.0/QtXmlPatterns
+QT = /usr/include/qt4
+QTINCDIR = -I$(QT)
+QTINCDIR += -I$(QT)/Qt
+QTINCDIR += -I$(QT)/QtCore
+QTINCDIR += -I$(QT)/QtAssistant
+QTINCDIR += -I$(QT)/QtGui
+QTINCDIR += -I$(QT)/QtNetwork
+QTINCDIR += -I$(QT)/QtOpenGL
+QTINCDIR += -I$(QT)/QtScript
+QTINCDIR += -I$(QT)/QtScriptTools
+QTINCDIR += -I$(QT)/QtSql
+QTINCDIR += -I$(QT)/QtSvg
+QTINCDIR += -I$(QT)/QtTest
+QTINCDIR += -I$(QT)/QtWebKit
+QTINCDIR += -I$(QT)/QtXml
+QTINCDIR += -I$(QT)/QtXmlPatterns
 QTLIBDIR = -L$(ISIS3LOCAL)/lib
-QTLIB    = -lQtXmlPatterns -lQtXml -lQtNetwork -lQtSql -lQtGui -lQtCore -lQtSvg -lQtTest -lQtOpenGL -lQtWebKit -lQtDBus
+QTLIB    = -lQtXmlPatterns -lQtXml -lQtNetwork -lQtSql -lQtGui -lQtCore -lQtSvg -lQtTest -lQtOpenGL -lqwt -lQtDBus
 
 UIC      = $(ISIS3LOCAL)/bin/uic
 MOC      = $(ISIS3LOCAL)/bin/moc
@@ -125,8 +126,8 @@ TIFFLIB    = -ltiff
 #---------------------------------------------------------------------------
 # Set up for naif
 #---------------------------------------------------------------------------
-NAIFINCDIR = -I$(ISIS3LOCAL)/include/naif/cspice64
-NAIFLIBDIR = -L$(ISIS3LOCAL)/lib
+NAIFINCDIR = -I$(ISISROOT)/cspice/include/
+NAIFLIBDIR = -L$(ISISROOT)/cspice/lib
 NAIFLIB    = -lcspice
 
 #---------------------------------------------------------------------------
@@ -148,7 +149,7 @@ JAMALIB    =
 #---------------------------------------------------------------------------
 GEOSINCDIR = -I$(ISIS3LOCAL)/include/geos/geos3.3.2
 GEOSLIBDIR = -L$(ISIS3LOCAL)/lib
-GEOSLIB    = -lgeos-3.3.2
+GEOSLIB    = -lgeos
 
 #---------------------------------------------------------------------------
 # Set up for the GNU Scientific Library (GSL).  Note that this setup
@@ -182,7 +183,7 @@ GMMLIB    =
 #---------------------------------------------------------------------------
 SUPERLUINCDIR = -I$(ISIS3LOCAL)/include/superlu/superlu4.3
 SUPERLULIBDIR = -L$(ISIS3LOCAL)/lib
-SUPERLULIB    = -lsuperlu_4.3 -lblas -lgfortran
+SUPERLULIB    = -lsuperlu -lblas -lgfortran
 
 #---------------------------------------------------------------------------
 # Set up for Google Protocol Buffers (ProtoBuf)
